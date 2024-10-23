@@ -14,7 +14,7 @@ Content-Type: application/json
 GET http://localhost:3000/transactions
 
 ### Get a Transaction by ID
-GET http://localhost:3000/transactions/12
+GET http://localhost:3000/transactions/11
 
 ### Update a Transaction by ID
 PUT http://localhost:3000/transactions/12
@@ -29,7 +29,7 @@ Content-Type: application/json
 }
 
 ### Delete a Transaction by ID
-DELETE http://localhost:3000/transactions/14
+DELETE http://localhost:3000/transactions/12
 
 ### Get Summary of Transactions
 GET http://localhost:3000/summary
