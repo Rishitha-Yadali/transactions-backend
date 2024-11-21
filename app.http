@@ -1,35 +1,42 @@
 ### Create a New Transaction
-POST http://localhost:3000/transactions
+POST http://localhost:3000/api/transactions
 Content-Type: application/json
 
 {
-    "type": "income",
-    "category": "Salary",
-    "amount": 5000,
-    "date": "2023-10-20",
-    "description": "Monthly salary"
+    "amount": 1000,
+    "transaction_type": "DEPOSIT",
+    "user_id": 1
 }
 
-### Get All Transactions
-GET http://localhost:3000/transactions
+### Retrieve Transactions for a User
+GET http://localhost:3000/api/transactions?user_id=1
 
-### Get a Transaction by ID
-GET http://localhost:3000/transactions/11
+### Get a Specific Transaction by ID
+GET http://localhost:3000/api/transactions/5
 
-### Update a Transaction by ID
-PUT http://localhost:3000/transactions/12
+### Update a Transaction's Status
+PUT http://localhost:3000/api/transactions/1
 Content-Type: application/json
 
 {
-    "type": "income",
-    "category": "Bonus",
-    "amount": 2000,
-    "date": "2023-10-21",
-    "description": "Year-end bonus"
+    "status": "COMPLETED"
 }
 
-### Delete a Transaction by ID
-DELETE http://localhost:3000/transactions/12
+### Test Error Case: Transaction Not Found
+GET http://localhost:3000/api/transactions/99
 
-### Get Summary of Transactions
-GET http://localhost:3000/summary
+### Test Error Case: Update Non-Existent Transaction
+PUT http://localhost:3000/api/transactions/99
+Content-Type: application/json
+
+{
+    "status": "FAILED"
+}
+
+### Test Error Case: Missing Required Fields
+POST http://localhost:3000/api/transactions
+Content-Type: application/json
+
+{
+    "amount": 500
+}

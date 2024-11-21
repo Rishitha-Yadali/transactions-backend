@@ -31,149 +31,106 @@ const initiateDBAndServer = async () => {
 
 // Function to create the necessary tables
 const initializeDatabase = async () => {
-  const createCategoriesTable = `
-    CREATE TABLE IF NOT EXISTS categories (
+  const createTableQuery = `
+  CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL
-    );`;
-
-  const createTransactionsTable = `
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL,
-      category TEXT NOT NULL,
       amount REAL NOT NULL,
-      date TEXT NOT NULL,
-      description TEXT
-    );`;
-
-  await db.exec(createCategoriesTable);
-  await db.exec(createTransactionsTable);
+      transaction_type TEXT CHECK(transaction_type IN ('DEPOSIT', 'WITHDRAWAL')) NOT NULL,
+      user_id INTEGER NOT NULL,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      status TEXT CHECK(status IN ('PENDING', 'COMPLETED', 'FAILED')) DEFAULT 'PENDING'
+  );
+`;
+await db.exec(createTableQuery);
 };
 
 initiateDBAndServer();
 
 
 
-// POST /transactions - Adds a new transaction (income or expense)
-app.post('/transactions', async (req, res) => {
-  const { type, category, amount, date, description } = req.body;
+// POST /api/transactions - Create a new transaction
+app.post('/api/transactions', async (req, res) => {
+  const { amount, transaction_type, user_id } = req.body;
 
-  // Check if category exists
-  const categoryQuery = `SELECT * FROM categories WHERE name = ? AND type = ?`;
-  const existingCategory = await db.get(categoryQuery, [category, type]);
-
-  // If category does not exist, add it
-  if (!existingCategory) {
-    const insertCategoryQuery = `INSERT INTO categories (name, type) VALUES (?, ?)`;
-    await db.run(insertCategoryQuery, [category, type]);
+  if (!amount || !transaction_type || !user_id) {
+      return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  const query = `INSERT INTO transactions (type, category, amount, date, description) VALUES (?, ?, ?, ?, ?)`;
-  
   try {
-    const result = await db.run(query, [type, category, amount, date, description]);
-    res.status(201).send("Transaction successfully added")
+      const query = `
+          INSERT INTO transactions (amount, transaction_type, user_id)
+          VALUES (?, ?, ?);
+      `;
+      const result = await db.run(query, [amount, transaction_type, user_id]);
+      const transactionId = result.lastID;
+
+      const newTransaction = await db.get(
+          `SELECT * FROM transactions WHERE id = ?`,
+          [transactionId]
+      );
+      res.status(201).json(newTransaction);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+      res.status(500).json({ error: error.message });
   }
 });
-// GET /transactions - Retrieves all transactions
-app.get("/transactions", async (req, res) => {
-  const getTransactionsQuery = `SELECT * FROM transactions;`;
-  const transactions = await db.all(getTransactionsQuery);
-  res.send(transactions);
-});
 
-// GET /transactions/:id - Retrieves a transaction by ID
-app.get('/transactions/:id', async (req, res) => {
-  const query = `SELECT * FROM transactions WHERE id = ?`;
-  
+// GET /api/transactions - Retrieve transactions for a user
+app.get('/api/transactions', async (req, res) => {
+  const { user_id } = req.query;
+
+  if (!user_id) {
+      return res.status(400).json({ error: 'Query parameter "user_id" is required' });
+  }
+
   try {
-    const transaction = await db.get(query, [req.params.id]);
-    if (!transaction) {
-      return res.status(404).json({ error: "Transaction not found" });
-    }
-    res.json(transaction);
+      const query = `SELECT * FROM transactions WHERE user_id = ?`;
+      const transactions = await db.all(query, [user_id]);
+      res.status(200).json({ transactions });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error.message });
   }
 });
 
-// PUT /transactions/:id - Updates a transaction by ID
-app.put('/transactions/:id', async (req, res) => {
-  const { type, category, amount, date, description } = req.body;
+// GET /api/transactions/:id - Get a specific transaction
+app.get('/api/transactions/:id', async (req, res) => {
+  const { id } = req.params;
 
-  const query = `UPDATE transactions SET type = ?, category = ?, amount = ?, date = ?, description = ? WHERE id = ?`;
-  
   try {
-    const existingTransaction = await db.get(`SELECT * FROM transactions WHERE id = ?`, [req.params.id]);
-    
-    // Check if the category has changed
-    if (existingTransaction && existingTransaction.category !== category) {
-      // Check if the new category exists
-      const categoryQuery = `SELECT * FROM categories WHERE name = ? AND type = ?`;
-      const existingCategory = await db.get(categoryQuery, [category, type]);
-      
-      // If category does not exist, add it
-      if (!existingCategory) {
-        const insertCategoryQuery = `INSERT INTO categories (name, type) VALUES (?, ?)`;
-        await db.run(insertCategoryQuery, [category, type]);
+      const transaction = await db.get(`SELECT * FROM transactions WHERE id = ?`, [id]);
+
+      if (!transaction) {
+          return res.status(404).json({ error: 'Transaction not found' });
       }
-    }
 
-    const result = await db.run(query, [type, category, amount, date, description, req.params.id]);
-    if (result.changes === 0) {
-      return res.status(404).json({ error: "Transaction not found" });
-    }
-    res.send("Transaction successfully updated" );
+      res.status(200).json(transaction);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+      res.status(500).json({ error: error.message });
   }
 });
 
-// DELETE /transactions/:id - Deletes a transaction by ID
-app.delete('/transactions/:id', async (req, res) => {
-  const query = `DELETE FROM transactions WHERE id = ?`;
-  
-  try {
-    const transaction = await db.get(`SELECT category FROM transactions WHERE id = ?`, [req.params.id]);
-    const result = await db.run(query, [req.params.id]);
-    
-    if (result.changes === 0) {
-      return res.status(404).json({ error: "Transaction not found" });
-    }
+// PUT /api/transactions/:id - Update transaction status
+app.put('/api/transactions/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
 
-    // Check if the category can be deleted
-    const categoryQuery = `SELECT COUNT(*) as count FROM transactions WHERE category = ?`;
-    const categoryCount = await db.get(categoryQuery, [transaction.category]);
-
-    // If no transactions are using the category, delete it
-    if (categoryCount.count === 0) {
-      await db.run(`DELETE FROM categories WHERE name = ?`, [transaction.category]);
-    }
-
-    res.json({ deleted: result.changes });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  if (!['COMPLETED', 'FAILED'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
   }
-});
 
-// GET /summary - Retrieves a summary of transactions
-app.get('/summary', async (req, res) => {
-  const query = `
-      SELECT 
-          SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS total_income,
-          SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS total_expenses
-      FROM transactions;
-  `;
-  
   try {
-    const row = await db.get(query);
-    row.balance = row.total_income - row.total_expenses;
-    res.json(row);
+      const query = `UPDATE transactions SET status = ? WHERE id = ?`;
+      const result = await db.run(query, [status, id]);
+
+      if (result.changes === 0) {
+          return res.status(404).json({ error: 'Transaction not found' });
+      }
+
+      const updatedTransaction = await db.get(
+          `SELECT * FROM transactions WHERE id = ?`,
+          [id]
+      );
+      res.status(200).json(updatedTransaction);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error.message });
   }
 });
